@@ -1,10 +1,17 @@
 import { create } from 'zustand'
 
-export interface Image {
-  id: number
+export interface ImageFile {
   filename: string
   originalName: string
   path: string
+}
+
+export interface Image {
+  id: number
+  filename: string  // 主图文件名（向后兼容）
+  originalName: string  // 主图原始名称
+  path: string  // 主图路径
+  images?: ImageFile[]  // 多图支持：图片文件数组
   uploadDate: string
   prompt: string
   negativePrompt: string
@@ -20,6 +27,7 @@ interface GalleryState {
   images: Image[]
   categories: string[]
   selectedCategory: string
+  selectedModel: string
   searchQuery: string
   isAdminMode: boolean
   isPrivateMode: boolean
@@ -27,6 +35,7 @@ interface GalleryState {
   setImages: (images: Image[]) => void
   setCategories: (categories: string[]) => void
   setSelectedCategory: (category: string) => void
+  setSelectedModel: (model: string) => void
   setSearchQuery: (query: string) => void
   toggleAdminMode: () => void
   setPrivateMode: (isPrivate: boolean) => void
@@ -40,6 +49,7 @@ export const useGalleryStore = create<GalleryState>((set) => ({
   images: [],
   categories: [],
   selectedCategory: 'all',
+  selectedModel: 'all',
   searchQuery: '',
   isAdminMode: false,
   isPrivateMode: false,
@@ -47,6 +57,7 @@ export const useGalleryStore = create<GalleryState>((set) => ({
   setImages: (images) => set({ images }),
   setCategories: (categories) => set({ categories }),
   setSelectedCategory: (category) => set({ selectedCategory: category }),
+  setSelectedModel: (model) => set({ selectedModel: model }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   toggleAdminMode: () => set((state) => ({ isAdminMode: !state.isAdminMode })),
   setPrivateMode: (isPrivate) => set({ isPrivateMode: isPrivate }),

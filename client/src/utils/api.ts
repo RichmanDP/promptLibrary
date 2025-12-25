@@ -44,6 +44,15 @@ export const api = {
     return response.json()
   },
 
+  // 补传图片（为已存在的图片添加更多图片）
+  async addMoreImages(id: number, formData: FormData) {
+    const response = await fetch(`${API_BASE}/images/${id}/add-images`, {
+      method: 'PATCH',
+      body: formData
+    })
+    return response.json()
+  },
+
   // 获取分类列表
   async getCategories() {
     const response = await fetch(`${API_BASE}/categories`)

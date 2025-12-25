@@ -40,12 +40,15 @@ const Settings: React.FC = () => {
   const [password, setPassword] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
   const [newCategory, setNewCategory] = useState('');
+  const [models, setModels] = useState<string[]>([]);
+  const [newModel, setNewModel] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     loadConfig();
     loadCategories();
+    loadModels();
   }, []);
 
   const loadConfig = async () => {
@@ -62,9 +65,19 @@ const Settings: React.FC = () => {
     try {
       const response = await fetch('/api/categories');
       const data = await response.json();
-      setCategories(data);
+      setCategories(data.categories || []);
     } catch (error) {
       console.error('加载分类失败:', error);
+    }
+  };
+
+  const loadModels = async () => {
+    try {
+      const response = await fetch('/api/models');
+      const data = await response.json();
+      setModels(data.models || []);
+    } catch (error) {
+      console.error('加载模型失败:', error);
     }
   };
 
@@ -148,6 +161,53 @@ const Settings: React.FC = () => {
       }
     } catch (error) {
       setMessage('❌ 删除分类失败');
+    }
+  };
+
+  const addModel = async () => {
+    if (!newModel.trim()) return;
+
+    try {
+      const response = await fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newModel })
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        setModels(data.models);
+        setNewModel('');
+        setMessage('✅ 模型添加成功！');
+        setTimeout(() => setMessage(''), 3000);
+      } else {
+        setMessage(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      setMessage('❌ 添加模型失败');
+    }
+  };
+
+  const deleteModel = async (name: string) => {
+    if (!confirm(`确定要删除模型"${name}"吗？`)) return;
+
+    try {
+      const response = await fetch(`/api/models/${encodeURIComponent(name)}`, {
+        method: 'DELETE'
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        setModels(data.models);
+        setMessage('✅ 模型删除成功！');
+        setTimeout(() => setMessage(''), 3000);
+      } else {
+        setMessage(`❌ ${data.error}`);
+      }
+    } catch (error) {
+      setMessage('❌ 删除模型失败');
     }
   };
 
@@ -249,6 +309,51 @@ const Settings: React.FC = () => {
                 <span>{category}</span>
                 <button
                   onClick={() => deleteCategory(category)}
+                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 模型管理 */}
+        <div className="bg-gray-800 rounded-xl p-6 mb-6 border border-gray-700">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <Tag className="w-5 h-5 text-blue-400" />
+            模型管理
+          </h2>
+
+          <div className="mb-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newModel}
+                onChange={(e) => setNewModel(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && addModel()}
+                placeholder="输入新模型名称（如 Stable Diffusion XL）"
+                className="flex-1 px-4 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+              />
+              <button
+                onClick={addModel}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-2 transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                添加
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {models.map((model) => (
+              <div
+                key={model}
+                className="px-4 py-2 bg-gray-700 rounded-lg flex items-center gap-2 group"
+              >
+                <span>{model}</span>
+                <button
+                  onClick={() => deleteModel(model)}
                   className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity"
                 >
                   <X className="w-4 h-4" />

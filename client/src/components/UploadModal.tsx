@@ -11,8 +11,9 @@ interface UploadModalProps {
 
 const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
   const { categories } = useGalleryStore()
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<string>('')
+  const [models, setModels] = useState<string[]>([])
+  const [files, setFiles] = useState<File[]>([])
+  const [previews, setPreviews] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [extractedData, setExtractedData] = useState<any>(null)
   
@@ -28,6 +29,24 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
     reversePromptText: ''
   })
 
+  // 加载模型列表
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await fetch('/api/models')
+        const data = await response.json()
+        setModels(data.models || [])
+        // 如果有模型且当前未选择，设置第一个为默认值
+        if (data.models?.length > 0 && !formData.model) {
+          setFormData(prev => ({ ...prev, model: data.models[0] }))
+        }
+      } catch (error) {
+        console.error('加载模型列表失败:', error)
+      }
+    }
+    loadModels()
+  }, [])
+
   // 当分类列表更新时，更新默认分类
   useEffect(() => {
     console.log('UploadModal - categories updated:', categories)
@@ -39,33 +58,54 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0]
-    if (selectedFile) {
-      setFile(selectedFile)
-      const reader = new FileReader()
-      reader.onload = () => setPreview(reader.result as string)
-      reader.readAsDataURL(selectedFile)
+    const selectedFiles = Array.from(e.target.files || [])
+    if (selectedFiles.length > 0) {
+      setFiles(selectedFiles)
+      // 为每个文件创建预览
+      const newPreviews: string[] = []
+      selectedFiles.forEach(file => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          newPreviews.push(reader.result as string)
+          if (newPreviews.length === selectedFiles.length) {
+            setPreviews(newPreviews)
+          }
+        }
+        reader.readAsDataURL(file)
+      })
     }
   }
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
-    const droppedFile = e.dataTransfer.files[0]
-    if (droppedFile && droppedFile.type.startsWith('image/')) {
-      setFile(droppedFile)
-      const reader = new FileReader()
-      reader.onload = () => setPreview(reader.result as string)
-      reader.readAsDataURL(droppedFile)
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+    if (droppedFiles.length > 0) {
+      setFiles(droppedFiles)
+      // 为每个文件创建预览
+      const newPreviews: string[] = []
+      droppedFiles.forEach(file => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          newPreviews.push(reader.result as string)
+          if (newPreviews.length === droppedFiles.length) {
+            setPreviews(newPreviews)
+          }
+        }
+        reader.readAsDataURL(file)
+      })
     }
   }
 
   const handleUpload = async () => {
-    if (!file) return
+    if (files.length === 0) return
 
     setUploading(true)
     try {
       const uploadFormData = new FormData()
-      uploadFormData.append('image', file)
+      // 添加所有图片文件
+      files.forEach(file => {
+        uploadFormData.append('images', file)
+      })
       uploadFormData.append('prompt', formData.prompt)
       uploadFormData.append('negativePrompt', formData.negativePrompt)
       uploadFormData.append('model', formData.model)
@@ -133,8 +173,10 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
         <div className="grid md:grid-cols-2 gap-6">
           {/* File Upload */}
           <div>
-            <label className="block text-sm font-medium mb-2">图片文件</label>
-            {!preview ? (
+            <label className="block text-sm font-medium mb-2">
+              图片文件 {files.length > 0 && `(${files.length} 张)`}
+            </label>
+            {previews.length === 0 ? (
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
@@ -143,20 +185,45 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
               >
                 <ImageIcon size={48} className="mx-auto mb-4 text-gray-600" />
                 <p className="text-gray-400 mb-2">拖拽图片到这里或点击选择</p>
-                <p className="text-sm text-gray-600">支持 JPG, PNG, WebP</p>
+                <p className="text-sm text-gray-600">支持多张图片上传 (JPG, PNG, WebP)</p>
               </div>
             ) : (
-              <div className="relative rounded-xl overflow-hidden">
-                <img src={preview} alt="Preview" className="w-full" />
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
+                  {previews.map((preview, index) => (
+                    <div key={index} className="relative rounded-lg overflow-hidden group">
+                      <img src={preview} alt={`Preview ${index + 1}`} className="w-full h-32 object-cover" />
+                      <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            const newFiles = files.filter((_, i) => i !== index)
+                            const newPreviews = previews.filter((_, i) => i !== index)
+                            setFiles(newFiles)
+                            setPreviews(newPreviews)
+                            if (newFiles.length === 0) {
+                              setExtractedData(null)
+                            }
+                          }}
+                          className="p-1 bg-red-500 hover:bg-red-600 rounded"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+                      <div className="absolute bottom-1 left-1 bg-black/50 px-2 py-0.5 rounded text-xs">
+                        {index + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 <button
                   onClick={() => {
-                    setFile(null)
-                    setPreview('')
+                    setFiles([])
+                    setPreviews([])
                     setExtractedData(null)
                   }}
-                  className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 rounded-lg"
+                  className="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
                 >
-                  <X size={20} />
+                  清空所有图片
                 </button>
               </div>
             )}
@@ -164,6 +231,7 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -211,13 +279,23 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
 
             <div>
               <label className="block text-sm font-medium mb-2">模型</label>
-              <input
-                type="text"
+              <select
                 value={formData.model}
                 onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                placeholder="例如: Stable Diffusion XL"
                 className="w-full px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg focus:outline-none focus:border-primary-500"
-              />
+              >
+                {models.length === 0 && (
+                  <option value="">请选择模型</option>
+                )}
+                {models.map(model => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+              {models.length === 0 && (
+                <p className="text-xs text-yellow-500 mt-1">
+                  ⚠️ 模型列表为空，请在设置中添加模型
+                </p>
+              )}
             </div>
 
             <div>
@@ -317,7 +395,7 @@ const UploadModal = ({ onClose, onSuccess }: UploadModalProps) => {
           </button>
           <button
             onClick={handleUpload}
-            disabled={!file || uploading}
+            disabled={files.length === 0 || uploading}
             className="px-6 py-2 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
           >
             {uploading ? (

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Image as ImageType } from '../store/galleryStore'
 import { getThumbnailUrl, truncateText, formatDate } from '../utils/helpers'
-import { Tag, Calendar, Sparkles } from 'lucide-react'
+import { Tag, Calendar, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface ImageCardProps {
   image: ImageType
@@ -12,6 +12,24 @@ interface ImageCardProps {
 
 const ImageCard = ({ image, viewMode, onClick }: ImageCardProps) => {
   const [isLoaded, setIsLoaded] = useState(false)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  
+  // 获取图片列表（优先使用 images 数组，否则使用主图）
+  const imageList = image.images && image.images.length > 0 ? image.images : [{ path: image.path, filename: image.filename, originalName: image.originalName }]
+  const hasMultipleImages = imageList.length > 1
+  const currentImage = imageList[currentImageIndex]
+
+  const handlePrevImage = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCurrentImageIndex((prev) => (prev === 0 ? imageList.length - 1 : prev - 1))
+    setIsLoaded(false)
+  }
+
+  const handleNextImage = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCurrentImageIndex((prev) => (prev === imageList.length - 1 ? 0 : prev + 1))
+    setIsLoaded(false)
+  }
 
   if (viewMode === 'list') {
     return (
@@ -25,13 +43,33 @@ const ImageCard = ({ image, viewMode, onClick }: ImageCardProps) => {
           <div className="relative w-32 h-32 flex-shrink-0 rounded-lg overflow-hidden bg-gray-800">
             {!isLoaded && <div className="absolute inset-0 skeleton" />}
             <img
-              src={getThumbnailUrl(image.path)}
-              alt={image.originalName}
+              src={getThumbnailUrl(currentImage.path)}
+              alt={currentImage.originalName}
               onLoad={() => setIsLoaded(true)}
               className={`w-full h-full object-cover transition-opacity duration-300 ${
                 isLoaded ? 'opacity-100' : 'opacity-0'
               }`}
             />
+            {/* 多图指示器和切换按钮 */}
+            {hasMultipleImages && (
+              <>
+                <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded text-xs">
+                  {currentImageIndex + 1}/{imageList.length}
+                </div>
+                <button
+                  onClick={handlePrevImage}
+                  className="absolute left-1 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-1 rounded transition-colors"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <button
+                  onClick={handleNextImage}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-1 rounded transition-colors"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </>
+            )}
           </div>
 
           {/* Info */}
@@ -76,13 +114,34 @@ const ImageCard = ({ image, viewMode, onClick }: ImageCardProps) => {
       <div className="relative aspect-[3/4] bg-gray-800 overflow-hidden">
         {!isLoaded && <div className="absolute inset-0 skeleton" />}
         <img
-          src={getThumbnailUrl(image.path)}
-          alt={image.originalName}
+          src={getThumbnailUrl(currentImage.path)}
+          alt={currentImage.originalName}
           onLoad={() => setIsLoaded(true)}
           className={`w-full h-full object-cover transition-all duration-300 ${
             isLoaded ? 'opacity-100' : 'opacity-0'
           } group-hover:scale-110`}
         />
+        
+        {/* 多图切换按钮 */}
+        {hasMultipleImages && (
+          <>
+            <div className="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded text-xs z-10">
+              {currentImageIndex + 1}/{imageList.length}
+            </div>
+            <button
+              onClick={handlePrevImage}
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded opacity-0 group-hover:opacity-100 transition-all z-10"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button
+              onClick={handleNextImage}
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-2 rounded opacity-0 group-hover:opacity-100 transition-all z-10"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </>
+        )}
         
         {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">

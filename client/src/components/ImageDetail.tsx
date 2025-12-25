@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { X, Copy, Edit2, Trash2, Check, Download, Sparkles, Tag } from 'lucide-react'
+import { X, Copy, Edit2, Trash2, Check, Download, Sparkles, Tag, ChevronLeft, ChevronRight, Plus, Upload } from 'lucide-react'
 import { Image } from '../store/galleryStore'
 import { useGalleryStore } from '../store/galleryStore'
 import { api } from '../utils/api'
@@ -13,17 +13,48 @@ interface ImageDetailProps {
 }
 
 const ImageDetail = ({ image, onClose, onUpdate }: ImageDetailProps) => {
-  const { isAdminMode, updateImage, deleteImage } = useGalleryStore()
+  const { isAdminMode, updateImage, deleteImage, categories } = useGalleryStore()
+  const [models, setModels] = useState<string[]>([])
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isEditing, setIsEditing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
   const [isGeneratingTags, setIsGeneratingTags] = useState(false)
+  const [isUploadingMore, setIsUploadingMore] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [editForm, setEditForm] = useState({
     prompt: image.prompt,
     negativePrompt: image.negativePrompt,
     model: image.model,
     category: image.category
   })
+
+  // 获取图片列表
+  const imageList = image.images && image.images.length > 0 ? image.images : [{ path: image.path, filename: image.filename, originalName: image.originalName }]
+  const hasMultipleImages = imageList.length > 1
+  const currentImage = imageList[currentImageIndex]
+
+  const handlePrevImage = () => {
+    setCurrentImageIndex((prev) => (prev === 0 ? imageList.length - 1 : prev - 1))
+  }
+
+  const handleNextImage = () => {
+    setCurrentImageIndex((prev) => (prev === imageList.length - 1 ? 0 : prev + 1))
+  }
+
+  // 加载模型列表
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const response = await fetch('/api/models')
+        const data = await response.json()
+        setModels(data.models || [])
+      } catch (error) {
+        console.error('加载模型列表失败:', error)
+      }
+    }
+    loadModels()
+  }, [])
 
   const handleCopy = async (text: string) => {
     const success = await copyToClipboard(text)
@@ -132,6 +163,40 @@ const ImageDetail = ({ image, onClose, onUpdate }: ImageDetailProps) => {
     }
   }
 
+  // 补传图片
+  const handleAddMoreImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    setIsUploadingMore(true)
+    try {
+      const formData = new FormData()
+      Array.from(files).forEach(file => {
+        formData.append('images', file)
+      })
+
+      const result = await api.addMoreImages(image.id, formData)
+      
+      if (result.success) {
+        alert(`成功添加 ${files.length} 张图片！`)
+        onUpdate()
+        // 刷新页面或重新加载数据
+        window.location.reload()
+      } else {
+        alert('补传图片失败: ' + (result.error || '未知错误'))
+      }
+    } catch (error) {
+      console.error('补传图片失败:', error)
+      alert('补传图片失败，请重试')
+    } finally {
+      setIsUploadingMore(false)
+      // 清空 input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -148,12 +213,47 @@ const ImageDetail = ({ image, onClose, onUpdate }: ImageDetailProps) => {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Image Side */}
-        <div className="md:w-1/2 bg-black flex items-center justify-center p-4">
+        <div className="md:w-1/2 bg-black flex items-center justify-center p-4 relative">
           <img
-            src={getThumbnailUrl(image.path)}
-            alt={image.originalName}
+            src={getThumbnailUrl(currentImage.path)}
+            alt={currentImage.originalName}
             className="max-w-full max-h-[80vh] object-contain"
           />
+          
+          {/* 多图切换按钮 */}
+          {hasMultipleImages && (
+            <>
+              <div className="absolute top-4 right-4 bg-black/70 px-3 py-1 rounded text-sm">
+                {currentImageIndex + 1} / {imageList.length}
+              </div>
+              <button
+                onClick={handlePrevImage}
+                className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-3 rounded-full transition-colors"
+              >
+                <ChevronLeft size={32} />
+              </button>
+              <button
+                onClick={handleNextImage}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 p-3 rounded-full transition-colors"
+              >
+                <ChevronRight size={32} />
+              </button>
+              {/* 底部缩略图导航 */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/70 p-2 rounded-lg max-w-full overflow-x-auto">
+                {imageList.map((img, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setCurrentImageIndex(index)}
+                    className={`w-16 h-16 rounded overflow-hidden border-2 transition-all ${
+                      index === currentImageIndex ? 'border-primary-500 scale-110' : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={getThumbnailUrl(img.path)} alt={`Thumb ${index + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Info Side */}
@@ -220,6 +320,33 @@ const ImageDetail = ({ image, onClose, onUpdate }: ImageDetailProps) => {
                   {isGeneratingTags ? 'AI打标中...' : 'AI打标签'}
                 </button>
 
+                {/* 补充图片按钮 */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingMore}
+                  className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors"
+                >
+                  {isUploadingMore ? (
+                    <>
+                      <Upload size={18} className="animate-pulse" />
+                      上传中...
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={18} />
+                      补充图片
+                    </>
+                  )}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleAddMoreImages}
+                  className="hidden"
+                />
+
                 <button
                   onClick={handleDelete}
                   className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
@@ -279,12 +406,16 @@ const ImageDetail = ({ image, onClose, onUpdate }: ImageDetailProps) => {
                 模型
               </label>
               {isEditing ? (
-                <input
-                  type="text"
+                <select
                   value={editForm.model}
                   onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
                   className="w-full px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg focus:outline-none focus:border-primary-500"
-                />
+                >
+                  <option value="">请选择模型</option>
+                  {models.map(model => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
               ) : (
                 <p className="text-gray-200">{image.model || '未知'}</p>
               )}
@@ -296,12 +427,15 @@ const ImageDetail = ({ image, onClose, onUpdate }: ImageDetailProps) => {
                 分类
               </label>
               {isEditing ? (
-                <input
-                  type="text"
+                <select
                   value={editForm.category}
                   onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
                   className="w-full px-4 py-2 bg-gray-900 border border-gray-800 rounded-lg focus:outline-none focus:border-primary-500"
-                />
+                >
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               ) : (
                 <span className="inline-block px-3 py-1 bg-primary-500/20 text-primary-400 rounded-lg">
                   {image.category}

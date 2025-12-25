@@ -52,7 +52,17 @@ if (!fs.existsSync(dbPath)) {
     images: [], 
     categories: [
       '人物', '风景', '动物', '抽象', '写实', '动漫', '奇幻', '科幻'
-    ], 
+    ],
+    models: [
+      'Stable Diffusion XL',
+      'Stable Diffusion 1.5',
+      'Midjourney',
+      'DALL-E 3',
+      'Z-image',
+      'Flux',
+      'Playground v2.5',
+      'Leonardo AI'
+    ],
     nextId: 1 
   }, null, 2));
 }
@@ -432,24 +442,33 @@ app.get('/api/images/:id', (req, res) => {
   }
 });
 
-// 上传图片
-app.post('/api/images', upload.single('image'), async (req, res) => {
+// 上传图片（支持多图）
+app.post('/api/images', upload.array('images', 10), async (req, res) => {
   try {
-    if (!req.file) {
+    if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: '请上传图片' });
     }
 
-    const filePath = req.file.path;
-    const metadata = await extractMetadata(filePath);
-    
     const db = readDB();
     const id = db.nextId++;
     
+    // 处理第一张图片的元数据
+    const firstFilePath = req.files[0].path;
+    const metadata = await extractMetadata(firstFilePath);
+    
+    // 创建图片文件数组
+    const imageFiles = req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: `/uploads/${file.filename}`
+    }));
+    
     const imageData = {
       id,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      path: `/uploads/${req.file.filename}`,
+      filename: req.files[0].filename,  // 主图（第一张）
+      originalName: req.files[0].originalname,
+      path: `/uploads/${req.files[0].filename}`,
+      images: imageFiles.length > 1 ? imageFiles : undefined,  // 多图数组
       uploadDate: new Date().toISOString(),
       prompt: metadata?.prompt || req.body.prompt || '',
       negativePrompt: metadata?.negativePrompt || req.body.negativePrompt || '',
@@ -460,15 +479,15 @@ app.post('/api/images', upload.single('image'), async (req, res) => {
       isPrivate: req.body.isPrivate === 'true'
     };
 
-    // AI自动打标签（如果启用）
+    // AI自动打标签（如果启用，使用第一张图片）
     if (req.body.enableAutoTag === 'true') {
-      const autoTags = await generateAutoTags(filePath, imageData);
+      const autoTags = await generateAutoTags(firstFilePath, imageData);
       imageData.tags = autoTags;
     }
 
-    // AI反推提示词（如果启用且没有提示词）
+    // AI反推提示词（如果启用且没有提示词，使用第一张图片）
     if (req.body.enableReversePrompt === 'true' && !imageData.prompt) {
-      const reversedPrompt = await reversePrompt(filePath, req.body.reversePromptText);
+      const reversedPrompt = await reversePrompt(firstFilePath, req.body.reversePromptText);
       imageData.prompt = reversedPrompt;
     }
 
@@ -521,6 +540,61 @@ app.put('/api/images/:id', async (req, res) => {
   }
 });
 
+// 补传图片（为已存在的图片记录添加更多图片）
+app.patch('/api/images/:id/add-images', upload.array('images', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: '请上传图片' });
+    }
+
+    const db = readDB();
+    const index = db.images.findIndex(img => img.id === parseInt(req.params.id));
+    
+    if (index === -1) {
+      return res.status(404).json({ error: '图片不存在' });
+    }
+
+    const image = db.images[index];
+    
+    // 创建新图片文件数组
+    const newImageFiles = req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: `/uploads/${file.filename}`
+    }));
+    
+    // 合并到现有图片数组
+    if (image.images && image.images.length > 0) {
+      // 已有多图，追加新图片
+      image.images = [...image.images, ...newImageFiles];
+    } else {
+      // 原本是单图，转换为多图模式
+      const originalImage = {
+        filename: image.filename,
+        originalName: image.originalName,
+        path: image.path
+      };
+      image.images = [originalImage, ...newImageFiles];
+    }
+    
+    image.updatedDate = new Date().toISOString();
+    
+    writeDB(db);
+    
+    // 更新元数据文件
+    saveImageMetadata(image.id, image);
+    
+    res.json({ 
+      success: true, 
+      message: `成功添加 ${newImageFiles.length} 张图片`,
+      image: image 
+    });
+  } catch (error) {
+    console.error('补传图片失败:', error);
+    res.status(500).json({ success: false, error: '补传图片失败' });
+  }
+});
+
 // 删除图片
 app.delete('/api/images/:id', (req, res) => {
   try {
@@ -532,11 +606,22 @@ app.delete('/api/images/:id', (req, res) => {
     }
 
     const image = db.images[index];
-    const filePath = path.join(__dirname, '..', image.path);
     
-    // 删除图片文件
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // 删除所有图片文件
+    if (image.images && image.images.length > 0) {
+      // 多图模式：删除所有图片
+      image.images.forEach(img => {
+        const filePath = path.join(__dirname, '..', img.path);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      });
+    } else {
+      // 单图模式：删除主图
+      const filePath = path.join(__dirname, '..', image.path);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
     }
 
     // 删除元数据文件
@@ -612,6 +697,77 @@ app.delete('/api/categories/:name', (req, res) => {
     res.json({ message: '删除成功', categories: db.categories });
   } catch (error) {
     res.status(500).json({ error: '删除分类失败' });
+  }
+});
+
+// ==================== 模型管理 ====================
+
+// 获取所有模型
+app.get('/api/models', (req, res) => {
+  try {
+    const db = readDB();
+    // 确保 models 字段存在
+    if (!db.models) {
+      db.models = [];
+      writeDB(db);
+    }
+    res.json({ success: true, models: db.models });
+  } catch (error) {
+    res.status(500).json({ success: false, error: '获取模型失败' });
+  }
+});
+
+// 添加模型
+app.post('/api/models', (req, res) => {
+  try {
+    const { name } = req.body;
+    
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: '模型名称不能为空' });
+    }
+
+    const db = readDB();
+    
+    // 确保 models 字段存在
+    if (!db.models) {
+      db.models = [];
+    }
+    
+    if (db.models.includes(name)) {
+      return res.status(400).json({ error: '模型已存在' });
+    }
+
+    db.models.push(name);
+    writeDB(db);
+
+    res.json({ message: '添加成功', models: db.models });
+  } catch (error) {
+    res.status(500).json({ error: '添加模型失败' });
+  }
+});
+
+// 删除模型
+app.delete('/api/models/:name', (req, res) => {
+  try {
+    const { name } = req.params;
+    const db = readDB();
+    
+    // 确保 models 字段存在
+    if (!db.models) {
+      db.models = [];
+    }
+    
+    const index = db.models.indexOf(name);
+    if (index === -1) {
+      return res.status(404).json({ error: '模型不存在' });
+    }
+
+    db.models.splice(index, 1);
+    writeDB(db);
+    
+    res.json({ message: '删除成功', models: db.models });
+  } catch (error) {
+    res.status(500).json({ error: '删除模型失败' });
   }
 });
 

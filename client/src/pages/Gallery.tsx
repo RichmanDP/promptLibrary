@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Upload, Grid, List, Settings, Image as ImageIcon } from 'lucide-react'
+import { Search, Upload, Grid, List, Settings, Image as ImageIcon, Sparkles } from 'lucide-react'
 import { useGalleryStore } from '../store/galleryStore'
 import { api } from '../utils/api'
 import Header from '../components/Header'
@@ -9,12 +9,14 @@ import ImageDetail from '../components/ImageDetail'
 import UploadModal from '../components/UploadModal'
 import FilterBar from '../components/FilterBar'
 import LoadingSpinner from '../components/LoadingSpinner'
+import ModelSidebar from '../components/ModelSidebar'
 
 const Gallery = () => {
   const {
     images,
     categories,
     selectedCategory,
+    selectedModel,
     searchQuery,
     isAdminMode,
     isPrivateMode,
@@ -28,15 +30,27 @@ const Gallery = () => {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
-  // 根据私密模式过滤图片
+  // 根据私密模式、分类和模型进行多重过滤
   const filteredImages = images.filter(img => {
+    // 1. 私密模式过滤
     if (isPrivateMode) {
-      // 私密模式下只显示私密图片
-      return img.isPrivate === true
+      if (img.isPrivate !== true) return false
     } else {
-      // 普通模式下只显示非私密图片
-      return img.isPrivate !== true
+      if (img.isPrivate === true) return false
     }
+
+    // 2. 分类过滤
+    if (selectedCategory !== 'all' && img.category !== selectedCategory) {
+      return false
+    }
+
+    // 3. 模型过滤
+    if (selectedModel !== 'all') {
+      const imgModel = img.model || '未知模型'
+      if (imgModel !== selectedModel) return false
+    }
+
+    return true
   })
 
   // 加载数据
@@ -106,77 +120,92 @@ const Gallery = () => {
         {/* Filter Bar */}
         <FilterBar />
 
-        {/* Stats Bar */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 flex items-center justify-between text-sm text-gray-400"
-        >
-          <div className="flex items-center gap-4">
-            <span>共 {filteredImages.length} 张作品</span>
-            {isPrivateMode && (
-              <span className="text-purple-400 flex items-center gap-1">
-                🔒 私密画廊
-              </span>
-            )}
-            {searchQuery && (
-              <span className="text-primary-400">
-                搜索: "{searchQuery}"
-              </span>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'grid'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-            >
-              <Grid size={18} />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded-lg transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-primary-500 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-            >
-              <List size={18} />
-            </button>
-          </div>
-        </motion.div>
+        {/* Layout with Sidebar */}
+        <div className="flex gap-6">
+          {/* Left Sidebar - Model Corridor */}
+          <ModelSidebar />
 
-        {/* Image Grid */}
-        {loading ? (
-          <LoadingSpinner />
-        ) : filteredImages.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center py-20 text-gray-500"
-          >
-            <ImageIcon size={64} className="mb-4 opacity-20" />
-            <p className="text-xl mb-2">
-              {isPrivateMode ? '暂无私密作品' : '暂无作品'}
-            </p>
-            <p className="text-sm">
-              {isAdminMode 
-                ? (isPrivateMode ? '在上传时勾选私密选项可添加私密作品' : '点击上传按钮添加第一张作品')
-                : (isPrivateMode ? '管理员还未上传任何私密作品' : '管理员还未上传任何作品')
-              }
-            </p>
-          </motion.div>
-        ) : (
-          <ImageGrid
-            images={filteredImages}
-            viewMode={viewMode}
-            onImageClick={setSelectedImage}
-          />
-        )}
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0">
+            {/* Stats Bar */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 flex items-center justify-between text-sm text-gray-400"
+            >
+              <div className="flex items-center gap-4">
+                <span>共 {filteredImages.length} 张作品</span>
+                {isPrivateMode && (
+                  <span className="text-purple-400 flex items-center gap-1">
+                    🔒 私密画廊
+                  </span>
+                )}
+                {selectedModel !== 'all' && (
+                  <span className="text-purple-400 flex items-center gap-1">
+                    <Sparkles size={14} />
+                    {selectedModel}
+                  </span>
+                )}
+                {searchQuery && (
+                  <span className="text-primary-400">
+                    搜索: "{searchQuery}"
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-lg transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-primary-500 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  }`}
+                >
+                  <Grid size={18} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-lg transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-primary-500 text-white'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  }`}
+                >
+                  <List size={18} />
+                </button>
+              </div>
+            </motion.div>
+
+            {/* Image Grid */}
+            {loading ? (
+              <LoadingSpinner />
+            ) : filteredImages.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex flex-col items-center justify-center py-20 text-gray-500"
+              >
+                <ImageIcon size={64} className="mb-4 opacity-20" />
+                <p className="text-xl mb-2">
+                  {isPrivateMode ? '暂无私密作品' : '暂无作品'}
+                </p>
+                <p className="text-sm">
+                  {isAdminMode 
+                    ? (isPrivateMode ? '在上传时勾选私密选项可添加私密作品' : '点击上传按钮添加第一张作品')
+                    : (isPrivateMode ? '管理员还未上传任何私密作品' : '管理员还未上传任何作品')
+                  }
+                </p>
+              </motion.div>
+            ) : (
+              <ImageGrid
+                images={filteredImages}
+                viewMode={viewMode}
+                onImageClick={setSelectedImage}
+              />
+            )}
+          </div>
+        </div>
       </main>
 
       {/* Modals */}
